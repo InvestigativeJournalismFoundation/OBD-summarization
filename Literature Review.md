@@ -96,6 +96,7 @@ Through literature review, we aim to answer the following questions:
     - Models:
         - GPT3.5
         - LLaMA-7B
+        - T5
     - How to summarize long documents:
         - Central Truncation: This is described as the most common and straightforward approach. It involves retaining
           only a portion of the document that fits within the context size by effectively discarding the middle section.
@@ -106,5 +107,57 @@ Through literature review, we aim to answer the following questions:
         - Summarization with Keyword Extraction: This approach attempts to use the entirety of the text by first
           extracting important keywords that capture the document's core meaning.
     - Evaluation Metrics:
-      - ROUGE
-      - BERTScore
+        - ROUGE
+        - BERTScore
+
+4. [Argumentative Segmentation Enhancement for Legal Summarization](https://export.arxiv.org/pdf/2307.05081v1.pdf)
+    - Datasets:
+        - [The legal decision summarization dataset](https://www.canlii.org/?origLang=en): It is provided by the
+          Canadian Legal Information Institute (CanLII).
+          The summaries are prepared by attorneys, members of legal societies, or law students. The court decisions
+          involve a wide variety of legal claims. The average length of the court decisions is 4,382 tokens. It exceeds
+          the token limitation of GPT-3.5 (4,097 tokens).
+    - Models:
+        - GPT3.5
+        - GPT4
+        - LED
+        - T5
+        - BART
+    - How to summarize long documents:
+        - Argumentative Segmentation: The proposed method involves cutting the long documents into shorter segments
+          while preserving argumentative components. A task of automatically classifying these segments as argumentative
+          or non-argumentative is proposed, stemming from the idea of `Argumentative Zoning (AZ)`. This involves
+          examining whether any argumentative sentences exist in a segment. The source utilizes a domain-independent
+          linear text segmentation algorithm, `C99`, to split legal case decisions into segments.
+    - Evaluation Metrics:
+        - ROUGE
+        - BLEU
+        - METEOR
+        - BERTScore
+
+5. [Element-aware Summarization with Large Language Models: Expert-aligned Evaluation and Chain-of-Thought Method](https://aclanthology.org/2023.acl-long.482/)
+    - Datasets:
+        - [CNN/Daily Mail](https://paperswithcode.com/dataset/cnn-daily-mail-1): This is a dataset for news
+          summarization. Abstractive summary bullets were written from news stories in CNN and Daily
+          Mail websites as questions (with one of the entities hidden), and stories as the corresponding passages from
+          which the system is expected to answer the fill-in the-blank question. The authors released the scripts that
+          crawl, extract and generate pairs of passages and questions from these websites.
+        - [XSum](https://paperswithcode.com/dataset/xsum): This is a dataset for evaluation of abstractive
+          single-document summarization systems. The articles are collected from BBC articles (2010 to 2017) and cover a
+          wide variety of domains (e.g., News, Politics, Sports, Weather, Business, Technology, Science, Health, Family,
+          Education, Entertainment, and Arts).
+    - Models:
+        - GPT3
+        - BART
+        - T5
+        - PEGASUS
+    - How to summarize long documents:
+        - Core element extraction: The LLM is prompted with the (truncated) source document and guiding
+          questions to extract key elements (Entity, Date, Event, Result).
+        - Multiple information integration and summarization: The LLM is then prompted with the truncated
+          source document, the questions, and the extracted answers to generate the final summary.
+    - Evaluation Metrics:
+        - ROUGE
+        - BERTScore
+        - Precision, Recall, F1 score for subtasks
+        - `Human evaluation` on `Fluency`, `Coherence`, `Consistency`, and `Relevance`
