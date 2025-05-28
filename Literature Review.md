@@ -161,7 +161,7 @@ Through literature review, we aim to answer the following questions:
         - BERTScore
         - Precision, Recall, F1 score for subtasks
         - `Human evaluation` on `Fluency`, `Coherence`, `Consistency`, and `Relevance`
-        -
+
 6. [Automatic Semantic Augmentation of Language Model Prompts (for Code Summarization)](https://dl.acm.org/doi/pdf/10.1145/3597503.3639183)
 
    This paper explores enhancing prompts for existing LLMs (code-davinci-002, text-davinci-003, `GPT-3.5-turbo`) by
