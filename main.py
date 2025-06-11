@@ -9,5 +9,5 @@ def simulate_data():
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    simulate_data
+    simulate_data()
 
