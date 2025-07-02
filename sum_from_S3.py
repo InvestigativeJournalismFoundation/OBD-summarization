@@ -39,7 +39,10 @@ def process_document_bytes(doc_bytes: bytes, spacy_model: str = "en_core_web_sm"
     }
 
     # Page-level stats
-    page_stats = [{"doc_id": doc_id, "page_token_count": count} for count in token_counts]
+    page_stats = [
+        {"doc_id": doc_id, "page_number": i, "tokens_per_page": count}
+        for i, count in enumerate(token_counts)
+    ]
 
     return doc_stats, page_stats
 
