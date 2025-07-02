@@ -10,4 +10,6 @@ dependencies = [
     "dotenv>=0.9.9",
     "faker>=37.3.0",
     "pandas>=2.3.0",
+    "spacy>=3.8.7",
+    "tqdm>=4.67.1",
 ]
