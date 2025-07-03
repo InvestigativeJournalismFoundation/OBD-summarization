@@ -10,6 +10,6 @@ if __name__ == "__main__":
     collector = DocumentStatsCollector(
         bucket_name="obd-sum-stats",
         prefix="",
-        workers=4
+        workers=8
     )
     asyncio.run(collector.process_documents_async())
