@@ -1,27 +1,30 @@
 import os
-import boto3
 import json
+import csv
+import asyncio
+import aioboto3
 import pandas as pd
-from statistics import mean
 import spacy
-from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
+from concurrent.futures import ProcessPoolExecutor
+from statistics import mean
+from pathlib import Path
 from dotenv import load_dotenv
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
-def process_document_bytes(doc_bytes: bytes, spacy_model: str = "en_core_web_sm"):
-    nlp = spacy.load(spacy_model)
+def process_document_bytes(doc_bytes: bytes):
+    nlp = spacy.load("en_core_web_sm")
     doc = json.loads(doc_bytes)
 
     metadata = doc.get("metadata", {})
     meta_data = metadata.get("data", {})
+
     doc_id = str(doc.get("doc_id", ""))
     pages = doc.get("text_json", {}).get("pages", [])
     sorted_pages = sorted(pages, key=lambda x: x.get("page", 0))
     texts = [page.get("contents", "") for page in sorted_pages]
     token_counts = [len(nlp(page)) for page in texts]
 
-    # Document-level summary
     doc_stats = {
         "doc_id": doc_id,
         "title": metadata.get("title", ""),
@@ -38,7 +41,6 @@ def process_document_bytes(doc_bytes: bytes, spacy_model: str = "en_core_web_sm"
         "token_std_dev": pd.Series(token_counts).std() if len(token_counts) > 1 else 0,
     }
 
-    # Page-level stats
     page_stats = [
         {"doc_id": doc_id, "page_number": i, "tokens_per_page": count}
         for i, count in enumerate(token_counts)
@@ -52,59 +54,111 @@ class DocumentStatsCollector:
         load_dotenv()
         self._S3_BUCKET = bucket_name
         self.prefix = prefix
-        self._s3_client = boto3.client(
+        self.workers = workers
+        self.doc_csv_path = Path("document_stats.csv")
+        self.page_csv_path = Path("page_token_counts.csv")
+        self.already_summed_docs = set()
+        self._load_existing_doc_ids()
+
+    def _load_existing_doc_ids(self):
+        if self.doc_csv_path.exists():
+            with open(self.doc_csv_path, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    self.already_summed_docs.add(row["doc_id"])
+            print(f"Resuming from {len(self.already_summed_docs)} documents already processed.")
+
+    def write_headers_if_needed(self):
+        if not self.doc_csv_path.exists():
+            with open(self.doc_csv_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=[
+                    "doc_id", "title", "organization", "request_number", "description",
+                    "created_at", "page_count", "file_size", "token_total",
+                    "token_avg_per_page", "token_min", "token_max", "token_std_dev"
+                ])
+                writer.writeheader()
+
+        if not self.page_csv_path.exists():
+            with open(self.page_csv_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=["doc_id", "page_number", "tokens_per_page"])
+                writer.writeheader()
+
+    def list_s3_keys(self):
+        import boto3
+        client = boto3.client(
             "s3",
             aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
             aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-            region_name=os.environ["AWS_REGION"],
+            region_name=os.environ["AWS_REGION"]
         )
-        self.workers = workers
-        self.records = []
-        self.page_records = []
-
-    def list_s3_keys(self):
-        paginator = self._s3_client.get_paginator("list_objects_v2")
+        paginator = client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=self._S3_BUCKET, Prefix=self.prefix):
             for obj in page.get("Contents", []):
                 if obj["Key"].endswith(".json"):
                     yield obj["Key"]
 
-    def process_documents(self, limit: int = None):
-        print("Fetching keys ...")
-        keys = list(self.list_s3_keys())
-        if limit:
-            keys = keys[:limit]
+    async def fetch_document(self, s3, key, semaphore):
+        async with semaphore:
+            try:
+                print(f"Fetching: {key}")
+                response = await s3.get_object(Bucket=self._S3_BUCKET, Key=key)
+                body = await response["Body"].read()
+                print(f"Fetched: {key}")
+                doc = json.loads(body)
+                doc_id = doc.get("doc_id")
+                if doc_id in self.already_summed_docs:
+                    return None, None
+                return doc_id, body
+            except Exception as e:
+                print(f"Failed to fetch {key}: {e}")
+                return None, None
 
-        print(f"Processing {len(keys)} documents with {self.workers} workers ...")
+    async def process_documents_async(self):
 
-        with ProcessPoolExecutor(max_workers=self.workers) as executor:
-            futures = []
-            for key in keys:
-                try:
-                    obj = self._s3_client.get_object(Bucket=self._S3_BUCKET, Key=key)
-                    doc_bytes = obj["Body"].read()
-                    futures.append(executor.submit(process_document_bytes, doc_bytes))
-                except Exception as e:
-                    print(f"Failed to fetch {key}: {e}")
 
-            for future in tqdm(as_completed(futures), total=len(futures)):
-                try:
-                    doc_stats, page_stats = future.result()
-                    self.records.append(doc_stats)
-                    self.page_records.extend(page_stats)
-                except Exception as e:
-                    print(f"Processing error: {e}")
 
-    def save_page_csv(self, path: str):
-        df = pd.DataFrame(self.page_records)
-        df.to_csv(path, index=False)
-        print(f"Saved {len(df)} page-level records to {path}")
+        keys = [k for k in self.list_s3_keys() if k.split(".")[0] not in self.already_summed_docs]
+        print(f"Found {len(keys)} keys to process.")
 
-    def to_dataframe(self) -> pd.DataFrame:
-        return pd.DataFrame(self.records)
+        session = aioboto3.Session()
+        semaphore = Semaphore(10)
+        loop = asyncio.get_running_loop()
 
-    def save_csv(self, path: str):
-        df = self.to_dataframe()
-        df.to_csv(path, index=False)
-        print(f"Saved {len(df)} records to {path}")
+        with ProcessPoolExecutor(max_workers=self.workers) as pool:
+            async with session.client(
+                    "s3",
+                    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+                    region_name=os.environ["AWS_REGION"]
+            ) as s3:
+
+                fetch_tasks = [
+                    create_task(self.fetch_document(s3, key, semaphore)) for key in keys
+                ]
+
+                futures = []
+                async for completed in async_tqdm.as_completed(fetch_tasks, total=len(fetch_tasks),
+                                                               desc="Processing docs"):
+                    doc_id, body = await completed
+                    if doc_id is None or body is None:
+                        continue
+                    future = loop.run_in_executor(pool, process_document_bytes, body)
+                    futures.append((doc_id, future))
+
+                for doc_id, future in futures:
+                    try:
+                        doc_stats, page_stats = await future
+
+                        with open(self.doc_csv_path, "a", newline="") as f:
+                            writer = csv.DictWriter(f, fieldnames=doc_stats.keys())
+                            writer.writerow(doc_stats)
+
+                        with open(self.page_csv_path, "a", newline="") as f:
+                            writer = csv.DictWriter(f, fieldnames=["doc_id", "page_number", "tokens_per_page"])
+                            writer.writerows(page_stats)
+
+                        self.already_summed_docs.add(doc_id)
+                        print(f"Wrote doc: {doc_id}")
+                    except Exception as e:
+                        print(f"Failed to process {doc_id}: {e}")
 

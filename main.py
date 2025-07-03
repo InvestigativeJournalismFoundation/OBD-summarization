@@ -12,6 +12,4 @@ if __name__ == "__main__":
         prefix="",
         workers=4
     )
-    collector.process_documents()
-    collector.save_csv("document_stats.csv")
-    collector.save_page_csv("page_token_counts.csv")
+    asyncio.run(collector.process_documents_async())
