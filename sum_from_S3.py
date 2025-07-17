@@ -56,8 +56,8 @@ class DocumentStatsCollector:
         self._S3_BUCKET = bucket_name
         self.prefix = prefix
         self.workers = workers
-        self.doc_csv_path = Path("document_stats.csv")
-        self.page_csv_path = Path("page_token_counts.csv")
+        self.doc_csv_path = Path("data/document_stats.csv")
+        self.page_csv_path = Path("data/page_token_counts.csv")
         self.already_summed_docs = set()
         self._load_existing_doc_ids()
 
